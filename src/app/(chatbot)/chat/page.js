@@ -1,9 +1,9 @@
-import Main from '@/app/modules/main'
+import Chat from '@/app/modules/main/chat'
 import React from 'react'
 
 const page = () => {
   return (
-     <div><Main/></div>
+     <div> <Chat /> </div>
   )
 }
 

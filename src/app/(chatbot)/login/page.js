@@ -1,9 +1,9 @@
-import Main from '@/app/modules/main'
+import Login from '@/app/modules/Auth/login'
 import React from 'react'
 
 const page = () => {
   return (
-     <div><Main/></div>
+     <div> <Login /></div>
   )
 }
 
