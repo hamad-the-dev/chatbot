@@ -58,7 +58,7 @@ const Login = () => {
         if (data.success) {
           toast.success("Login successful", { toastId: "login-success" });
           
-          // Store authentication data
+    
           if (data.token) {
             localStorage.setItem("token", data.token);
           }

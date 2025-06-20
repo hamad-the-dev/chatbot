@@ -15,12 +15,14 @@ import data from "@emoji-mart/data";
 import Picker from "@emoji-mart/react";
 import Skeleton from "react-loading-skeleton";
 import 'react-loading-skeleton/dist/skeleton.css';
-import axiosPrivate from '@/app/utils/axiosPrivate';
-import { io } from 'socket.io-client';
-import { GoPlus } from "react-icons/go";
+// import axiosPrivate from '@/app/utils/axiosPrivate';
+
+import axiosPrivate from "../../../../utils/axiosPrivate"
 import { AppContext } from '@/app/context/AppContext';
 import Navbar from '@/app/components/navbar';
+import { FaPlus } from "react-icons/fa6";
 // import UploadProfilePicture from '@/app/components/upload';
+import { io } from 'socket.io-client';
 
 
 const GroupAvatar = ({ name }) => {
@@ -66,7 +68,6 @@ const MemberAvatar = ({ name }) => {
 
 const Chat = () => {
   const { userData } = useContext(AppContext);
-  const socketRef = useRef();
   const messagesEndRef = useRef(null);
   const [showModal, setShowModal] = useState(false);  const [showRenameModal, setShowRenameModal] = useState(false);
   const [showEditMembersModal, setShowEditMembersModal] = useState(false);
@@ -87,6 +88,7 @@ const Chat = () => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const socketRef = useRef(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -158,85 +160,9 @@ const Chat = () => {
   }, []);
   useEffect(() => {
     if (userData) {
-      socketRef.current = io('http://localhost:4000', {
-        transports: ['websocket', 'polling'],
-        withCredentials: true,
-        timeout: 60000,
-        reconnection: true,
-        reconnectionAttempts: 5,
-        reconnectionDelay: 1000
-      });
 
-      socketRef.current.on('connect', () => {
-        console.log('Connected to socket server');
-      });
-
-      socketRef.current.on('connect_error', (error) => {
-        console.error('Socket connection error:', error);
-
-        alert('Connection error. Please check your internet connection.');
-      });
-
-      socketRef.current.on('disconnect', (reason) => {
-        console.error('Socket disconnected:', reason);
-
-      });
-
-      return () => {
-        if (socketRef.current) {
-          socketRef.current.disconnect();
-        }
-      };
     }
   }, [userData]);
-
-  useEffect(() => {
-    if (!socketRef.current) return;
-
-
-    socketRef.current.on('receive_message', (messageData) => {
-      console.log('Received message:', messageData);
-      setMessagesByGroup(prev => ({
-        ...prev,
-        [messageData.groupName]: [...(prev[messageData.groupName] || []), {
-          id: messageData.id,
-          text: messageData.text,
-          sender: messageData.senderName,
-          timestamp: new Date(messageData.timestamp).toLocaleDateString() + ' ' + new Date(messageData.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }]
-      }));
-    });
-    socketRef.current.on('message_deleted', ({ groupId, messageId }) => {
-      console.log('Message deleted:', messageId);
-      const group = groups.find(g => g._id === groupId);
-      if (group) {
-        setMessagesByGroup(prev => ({
-          ...prev,
-          [group.name]: prev[group.name].filter(msg => msg.id !== messageId)
-        }));
-      }
-    });
-
-    return () => {
-      socketRef.current.off('receive_message');
-      socketRef.current.off('message_deleted');
-    };
-  }, [groups]);
-  useEffect(() => {
-    if (!socketRef.current || !activeGroup) return;
-    const currentGroup = groups.find(g => g.name === activeGroup);
-    if (currentGroup) {
-      console.log(`Joining group: ${currentGroup._id}`);
-      socketRef.current.emit('join_group', currentGroup._id);
-    }
-
-    return () => {
-      if (currentGroup) {
-        console.log(`Leaving group: ${currentGroup._id}`);
-        socketRef.current.emit('leave_group', currentGroup._id);
-      }
-    };
-  }, [activeGroup, groups]);
 
   const handleEmojiSelect = (emoji) => {
     setNewMessage(prev => prev + emoji.native);
@@ -245,72 +171,75 @@ const Chat = () => {
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim() || !socketRef.current || isSending) return;
-
-    try {
-      setIsSending(true);
-      const currentGroup = groups.find(g => g.name === activeGroup);
-      if (!currentGroup) {
-        console.error('Group not found');
-        return;
-      }
-
-      const tempId = Date.now().toString();
-      const tempMessage = {
-        id: tempId,
-        text: newMessage,
-        sender: userData?.name,
-        timestamp: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        status: 'sending'
-      };
-      setMessagesByGroup(prev => ({
-        ...prev,
-        [activeGroup]: [...(prev[activeGroup] || []), tempMessage]
-      }));
-
-      const response = await axiosPrivate.post('/api/groups/message', {
-        groupId: currentGroup._id,
-        text: newMessage,
-        sender: userData?._id
+    if (!newMessage.trim() || !activeGroup) return;
+    setIsSending(true);
+    const groupObj = groups.find(g => g.name === activeGroup);
+    const senderName = userData?.name || 'Guest (You)';
+    const msgText = newMessage;
+    setNewMessage('');
+    // Emit message to server
+    if (groupObj && socketRef.current) {
+      socketRef.current.emit('sendGroupMessage', {
+        groupId: groupObj._id,
+        message: msgText,
+        sender: senderName
       });
-
-      if (response.data.success) {
-        const messageData = {
-          id: response.data.message._id,
-          text: newMessage,
-          groupId: currentGroup._id,
-          groupName: activeGroup,
-          senderId: userData?._id,
-          senderName: userData?.name,
-          timestamp: new Date().toISOString()
-        };
-
-        socketRef.current.emit('send_message', messageData);
-        setMessagesByGroup(prev => ({
-          ...prev,
-          [activeGroup]: prev[activeGroup].map(msg =>
-            msg.id === tempId
-              ? { ...msg, id: response.data.message._id, status: 'sent' }
-              : msg
-          )
-        }));
-
-        setNewMessage('');
-      }
-    } catch (error) {
-      console.error('Error sending message:', error);
-      setMessagesByGroup(prev => ({
-        ...prev,
-        [activeGroup]: prev[activeGroup].map(msg =>
-          msg.status === 'sending'
-            ? { ...msg, status: 'error' }
-            : msg
-        )
-      }));
-    } finally {
-      setIsSending(false);
     }
+   
+    setMessagesByGroup(prev => ({
+      ...prev,
+      [activeGroup]: [
+        ...(prev[activeGroup] || []),
+        {
+          id: Date.now() + Math.random(),
+          text: msgText,
+          sender: senderName,
+          timestamp: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          status: 'delivered'
+        }
+      ]
+    }));
+    setIsSending(false);
   };
+
+  useEffect(() => {
+    // Connect to Socket.IO server
+    socketRef.current = io('http://localhost:4000', {
+      withCredentials: true
+    });
+
+    // Listen for incoming group messages
+    socketRef.current.on('receiveGroupMessage', ({ groupId, message, sender }) => {
+      setMessagesByGroup(prev => {
+        const groupName = groups.find(g => g._id === groupId)?.name || activeGroup;
+        const newMsg = {
+          id: Date.now() + Math.random(),
+          text: message,
+          sender: sender,
+          timestamp: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          status: 'delivered'
+        };
+        return {
+          ...prev,
+          [groupName]: [...(prev[groupName] || []), newMsg]
+        };
+      });
+    });
+
+    return () => {
+      socketRef.current.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    // Join group room when activeGroup changes
+    if (activeGroup && groups.length && socketRef.current) {
+      const groupObj = groups.find(g => g.name === activeGroup);
+      if (groupObj) {
+        socketRef.current.emit('joinGroup', groupObj._id);
+      }
+    }
+  }, [activeGroup, groups]);
 
   const handleCreateGroup = async (e) => {
     e.preventDefault();
@@ -504,12 +433,6 @@ const Chat = () => {
           ...prev,
           [activeGroup]: prev[activeGroup].filter(msg => msg.id !== messageId)
         }));
-        if (socketRef.current) {
-          socketRef.current.emit('message_deleted', {
-            groupId: currentGroup._id,
-            messageId: messageId
-          });
-        }
       }
     } catch (error) {
       console.error('Error deleting message:', error);
@@ -546,6 +469,10 @@ const Chat = () => {
       alert('Speech recognition is not supported in your browser.');
     }
   };
+  
+
+    // const socket = io();
+
 
   return (
     <>
@@ -573,7 +500,7 @@ const Chat = () => {
               onClick={() => setShowModal(true)}
               className="bg-sky-500 text-white p-2 rounded-full hover:bg-sky-600 "
             >
-              <span className="text-xl"><GoPlus /></span>
+              <span className="text-xl"><FaPlus /></span>
             </button>
           </div>
           <div className="flex-1 overflow-y-auto">
@@ -704,7 +631,7 @@ const Chat = () => {
                         >
                           Delete All Chats
                         </button>
-                        <button
+                        {/* <button
                           onClick={() => {
                             handleLeaveGroup();
                             setShowDropdown(false);
@@ -712,7 +639,7 @@ const Chat = () => {
                           className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
                         >
                           Leave Group
-                        </button>
+                        </button> */}
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -893,7 +820,8 @@ const Chat = () => {
                   ))
                 )
                   : (
-                    members.map((member) => (                      <motion.div
+                    members.map((member) => (           
+                       <motion.div
                         key={member._id}
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
@@ -912,7 +840,8 @@ const Chat = () => {
               </motion.div>
             )}
           </AnimatePresence>
-        </div>          <AnimatePresence>
+        </div>        
+          <AnimatePresence>
           {showEditMembersModal && (
             <motion.div
               initial={{ opacity: 0 }}

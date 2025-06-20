@@ -4,7 +4,8 @@ import React from 'react';
 import { useEffect } from "react";
 import { createContext, useState } from "react";
 import { toast } from "react-toastify";
-import axiosPrivate from '../utils/axiosPrivate';
+// import axiosPrivate from '../utils/axiosPrivate';
+import axiosPrivate from '../../../utils/axiosPrivate';
 
 const isBrowser = typeof window !== 'undefined';
 
